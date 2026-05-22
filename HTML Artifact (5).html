@@ -1,0 +1,490 @@
+<html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<title>测一下你应该去哪里生活？</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; min-height: 100vh; overflow-x: hidden; }
+
+  #page-input {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh; display: flex; align-items: center;
+    justify-content: center; padding: 20px;
+  }
+  .container {
+    background: rgba(255,255,255,0.95); border-radius: 20px;
+    padding: 40px; max-width: 500px; width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  h1 { text-align: center; color: #764ba2; margin-bottom: 10px; font-size: 26px; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 25px; font-size: 14px; }
+  .form-group { margin-bottom: 18px; }
+  label { display: block; color: #555; margin-bottom: 6px; font-weight: bold; }
+  input { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 15px; }
+  input:focus { outline: none; border-color: #764ba2; }
+  .word-inputs { display: flex; gap: 10px; }
+  .word-inputs input { text-align: center; font-size: 18px; }
+  button {
+    width: 100%; padding: 14px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white; border: none; border-radius: 10px;
+    font-size: 16px; font-weight: bold; cursor: pointer;
+    margin-top: 10px; transition: transform 0.2s;
+  }
+  button:hover { transform: translateY(-2px); }
+
+  #page-result {
+    display: none; min-height: 100vh;
+    background: radial-gradient(ellipse at center, #050816 0%, #000005 100%);
+    position: relative; padding: 25px 0 30px;
+  }
+  .stars {
+    position: fixed; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(1px 1px at 10% 20%, #fff, transparent),
+      radial-gradient(1px 1px at 30% 70%, #fff, transparent),
+      radial-gradient(2px 2px at 50% 40%, #fff, transparent),
+      radial-gradient(1px 1px at 70% 80%, #fff, transparent),
+      radial-gradient(1.5px 1.5px at 85% 15%, #fff, transparent),
+      radial-gradient(1px 1px at 15% 85%, #fff, transparent),
+      radial-gradient(1px 1px at 95% 60%, #fff, transparent);
+    opacity: 0.5; animation: twinkle 4s infinite alternate;
+  }
+  @keyframes twinkle { from {opacity:0.3} to {opacity:0.7} }
+
+  .result-content {
+    position: relative; z-index: 2;
+    max-width: 1100px; margin: 0 auto;
+    padding: 0 20px; color: #fff; text-align: center;
+  }
+  .greeting {
+    font-size: 14px; color: #b8c4ff;
+    letter-spacing: 4px; margin-bottom: 15px;
+    opacity: 0; animation: fadeUp 0.8s 0.2s forwards;
+  }
+
+  .map-wrap {
+    position: relative; width: 100%;
+    max-width: 900px;
+    aspect-ratio: 2 / 1;
+    margin: 0 auto 15px;
+    opacity: 0; animation: fadeUp 1s 0.5s forwards;
+  }
+  .map-svg { width: 100%; height: 100%; display: block; }
+  .map-svg .country {
+    fill: #0d1a3d;
+    stroke: #2a4a8a;
+    stroke-width: 0.4;
+    transition: fill 0.3s;
+  }
+  .map-svg .country.highlight {
+    fill: #4a7fd6;
+    filter: drop-shadow(0 0 8px rgba(120,180,255,0.8));
+  }
+
+  .pin {
+    position: absolute;
+    transform: translate(-50%, -100%);
+    pointer-events: none;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .city-label {
+    font-size: clamp(20px, 4vw, 48px);
+    font-weight: 900; letter-spacing: 4px; color: #fff;
+    white-space: nowrap;
+    text-shadow:
+      0 0 10px rgba(180,220,255,0.95),
+      0 0 25px rgba(120,180,255,0.8),
+      0 0 50px rgba(80,150,255,0.6);
+    margin-bottom: 6px;
+    opacity: 0; animation: glow 0.9s 1s forwards;
+  }
+  @keyframes glow {
+    from { opacity: 0; transform: scale(0.7); filter: blur(8px); }
+    to { opacity: 1; transform: scale(1); filter: blur(0); }
+  }
+  .pin-line {
+    width: 1.5px; height: clamp(30px, 6vw, 60px);
+    background: linear-gradient(to bottom, rgba(180,220,255,0.95), rgba(180,220,255,0.3));
+    box-shadow: 0 0 6px rgba(180,220,255,0.8);
+    opacity: 0; animation: fadeUp 0.5s 1.4s forwards;
+  }
+  .pin-dot {
+    width: 10px; height: 10px; border-radius: 50%; background: #fff;
+    box-shadow:
+      0 0 10px #fff,
+      0 0 20px rgba(180,220,255,0.9),
+      0 0 40px rgba(120,180,255,0.7);
+    opacity: 0;
+    animation: pulse 1.5s 1.6s infinite, popIn 0.4s 1.6s forwards;
+  }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.5)} }
+  @keyframes popIn { from{opacity:0} to{opacity:1} }
+
+  .info-block {
+    max-width: 600px; margin: 0 auto;
+    opacity: 0; animation: fadeUp 0.8s 1.8s forwards;
+  }
+  .country-line { font-size: 18px; color: #d8e4ff; letter-spacing: 3px; margin-bottom: 15px; }
+  .country-line strong { color: #fff; }
+  .description {
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 15px; padding: 20px 25px;
+    color: #e8edff; font-size: 15px; line-height: 1.8;
+    letter-spacing: 1px; text-align: left;
+  }
+  .description .highlight { color: #aac8ff; font-weight: bold; }
+  .meta {
+    display: flex; justify-content: center; gap: 25px;
+    margin-top: 15px; flex-wrap: wrap;
+    font-size: 13px; color: #8a96c8; letter-spacing: 1px;
+  }
+  .meta span strong { color: #cfd8ff; }
+  .footer-text { margin-top: 18px; color: #6c7898; font-size: 12px; letter-spacing: 1px; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .back-btn {
+    position: fixed; top: 15px; left: 15px; z-index: 10;
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff; padding: 9px 18px;
+    border-radius: 30px; font-size: 13px;
+    cursor: pointer; width: auto; margin-top: 0;
+    letter-spacing: 1px; transition: all 0.3s;
+  }
+  .back-btn:hover { background: rgba(255,255,255,0.2); transform: translateX(-3px); }
+
+  .loading {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #8a96c8; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div id="page-input">
+  <div class="container">
+    <h1>✨ 测一下你应该去哪里生活？ ✨</h1>
+    <p class="subtitle">凭直觉，告诉你最适合的城市</p>
+    <div class="form-group">
+      <label>姓名</label>
+      <input type="text" id="name" placeholder="例如：狄仁杰">
+    </div>
+    <div class="form-group">
+      <label>生日 (MM/DD)</label>
+      <input type="text" id="birthday" placeholder="例如：05/21" maxlength="5">
+    </div>
+    <div class="form-group">
+      <label>第一反应的三个字（凭直觉！）</label>
+      <div class="word-inputs">
+        <input type="text" id="w1" maxlength="2" placeholder="字1">
+        <input type="text" id="w2" maxlength="2" placeholder="字2">
+        <input type="text" id="w3" maxlength="2" placeholder="字3">
+      </div>
+    </div>
+    <button onclick="play()">🌍 快来看一下吧！</button>
+  </div>
+</div>
+
+<div id="page-result">
+  <div class="stars"></div>
+  <button class="back-btn" onclick="goBack()">← 返回</button>
+  <div class="result-content">
+    <div class="greeting" id="greeting"></div>
+    <div class="map-wrap" id="mapWrap">
+      <svg class="map-svg" id="mapSvg" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="pin" id="pin">
+        <div class="city-label" id="cityLabel"></div>
+        <div class="pin-line"></div>
+        <div class="pin-dot"></div>
+      </div>
+      <div class="loading" id="mapLoading">地图加载中…</div>
+    </div>
+    <div class="info-block">
+      <div class="country-line">🌍 <strong id="countryName"></strong></div>
+      <div class="description" id="description"></div>
+      <div class="meta">
+        <span>星座：<strong id="zodiacText"></strong></span>
+        <span>气质倾向：<strong id="catText"></strong></span>
+      </div>
+      <p class="footer-text">✦ 这只是趣味游戏，未来仍充满无限可能 ✦</p>
+    </div>
+  </div>
+</div>
+
+<script>
+function getZodiac(m, d) {
+  const z = [[1,20,'摩羯'],[2,19,'水瓶'],[3,21,'双鱼'],[4,20,'白羊'],
+    [5,21,'金牛'],[6,22,'双子'],[7,23,'巨蟹'],[8,23,'狮子'],
+    [9,23,'处女'],[10,23,'天秤'],[11,22,'天蝎'],[12,22,'射手'],[12,31,'摩羯']];
+  for (let i=0;i<z.length;i++) if (m<z[i][0]||(m===z[i][0]&&d<=z[i][1])) return z[i][2];
+  return '摩羯';
+}
+const elementMap = {
+  '白羊':'火','狮子':'火','射手':'火','金牛':'土','处女':'土','摩羯':'土',
+  '双子':'风','天秤':'风','水瓶':'风','巨蟹':'水','天蝎':'水','双鱼':'水'
+};
+const categories = {
+  nature:['山','海','森','林','风','雨','雪','绿','野','远','冒','由','光','空','湖','河','花','云','星','天','水','石','岛','原','沙','洋','岸','滩'],
+  culture:['书','画','音','诗','歌','古','老','静','深','智','美','灵','咖','文','艺','史','禅','韵','雅','墨','琴','茶'],
+  modern:['快','高','新','电','梦','创','变','潮','动','忙','未','科','技','大','金','闪','炫','酷','摩','都'],
+  comfort:['吃','甜','香','暖','家','软','懒','慢','逸','趣','乐','和','味','安','闲','悠','适','愈','馨','宁']
+};
+
+const db = {
+  '火': {
+    nature: [
+      {c:'澳大利亚',cn:'悉尼',city:'SYDNEY',lat:-33.87,lng:151.21,
+       desc:'<span class="highlight">悉尼</span>是阳光与海浪写就的明信片。歌剧院的白色风帆下，邦迪海滩的浪花永不停歇，海港大桥跨越蔚蓝。这里的每一个清晨都是冲浪、徒步与户外咖啡，每一个黄昏都是港湾与红酒。你那燃烧的灵魂，需要这片广阔的天地承接。'},
+      {c:'巴西',cn:'里约热内卢',city:'RIO',lat:-22.91,lng:-43.17,
+       desc:'<span class="highlight">里约</span>是一场永不落幕的桑巴狂欢。基督山张开双臂俯瞰着科帕卡巴纳的金色沙滩，街头随时响起鼓点，海风裹挟着热情。这里没人按部就班，每个人都在燃烧、起舞、热爱。这正是你心底那团火想去的地方。'},
+      {c:'澳大利亚',cn:'凯恩斯',city:'CAIRNS',lat:-16.92,lng:145.78,
+       desc:'<span class="highlight">凯恩斯</span>是大堡礁与热带雨林交织的冒险之城。潜入海底与彩色珊瑚共舞，跳出飞机俯瞰世界，在丹翠雨林听亿万年前的鸟鸣。这里属于不愿安分的人——而你，就是那种眼里有光、脚下有路的人。'}
+    ],
+    culture: [
+      {c:'意大利',cn:'罗马',city:'ROMA',lat:41.90,lng:12.50,
+       desc:'<span class="highlight">罗马</span>是一座露天的史诗博物馆。斗兽场的残壁讲述着帝国的轰鸣，许愿池前永远有硬币落水的清响，每条小巷都通向一段千年传说。这里的阳光浓烈，espresso 浓烈，连人的眼神都浓烈。你的火焰，应在永恒之城燃烧。'},
+      {c:'西班牙',cn:'巴塞罗那',city:'BARCELONA',lat:41.39,lng:2.17,
+       desc:'<span class="highlight">巴塞罗那</span>是高迪用想象力建造的童话。圣家堂仍在生长，米拉之家像融化的雕塑，兰布拉大道上街头艺人不眠。地中海在城市边缘闪光，深夜的 tapas 与红酒永远开着门。这是为艺术而活的灵魂之城。'},
+      {c:'意大利',cn:'佛罗伦萨',city:'FIRENZE',lat:43.77,lng:11.25,
+       desc:'<span class="highlight">佛罗伦萨</span>是文艺复兴的心脏。乌菲兹美术馆藏着波提切利的春神，米开朗基罗的大卫俯视着街头，圣母百花大教堂的红顶映着托斯卡纳的夕阳。这里的每一块石头都浸润着美与思想——为你这样懂得欣赏的人而准备。'}
+    ],
+    modern: [
+      {c:'西班牙',cn:'马德里',city:'MADRID',lat:40.42,lng:-3.70,
+       desc:'<span class="highlight">马德里</span>是一座深夜才真正苏醒的城。普拉多博物馆白天是艺术殿堂，夜晚的酒吧与 flamenco 才是它的灵魂。西班牙人凌晨两点才开始晚餐，三点才开始狂欢。你这把火，需要这样不知疲倦的城市来匹配。'},
+      {c:'巴西',cn:'圣保罗',city:'SAO PAULO',lat:-23.55,lng:-46.63,
+       desc:'<span class="highlight">圣保罗</span>是南美的纽约，是混乱中迸发活力的巨型熔炉。这里有最前沿的设计、最地道的街头美食、最汹涌的人潮。你想站到舞台中央？这座城市永远为有野心的人留着位置。'},
+      {c:'澳大利亚',cn:'墨尔本',city:'MELBOURNE',lat:-37.81,lng:144.96,
+       desc:'<span class="highlight">墨尔本</span>是创意人的天堂。涂鸦小巷里藏着世界顶级咖啡馆，每一周都有艺术节、音乐会、设计展。这里被多次评为全球最宜居城市，但更迷人的是它骨子里的 cool——不张扬，却处处惊喜。'}
+    ],
+    comfort: [
+      {c:'意大利',cn:'那不勒斯',city:'NAPOLI',lat:40.85,lng:14.27,
+       desc:'<span class="highlight">那不勒斯</span>是披萨的故乡，是地中海最质朴的拥抱。维苏威火山在远方静默，渔港的早市生猛新鲜，意大利奶奶在窗边晾着衣服喊孩子吃饭。这里的"快乐"不需要包装，简单热烈，就像你内心那团从不熄灭的火。'},
+      {c:'西班牙',cn:'塞维利亚',city:'SEVILLA',lat:37.39,lng:-5.99,
+       desc:'<span class="highlight">塞维利亚</span>是 flamenco 的诞生地，是橙花香气飘满街道的安达卢西亚明珠。白天躲进 tapas 小馆和 sangria 共度，夜晚在月光下的广场看舞者跺响地板。属于你的，是这种炽热又慵懒的南欧节奏。'}
+    ]
+  },
+  '土': {
+    nature: [
+      {c:'瑞士',cn:'采尔马特',city:'ZERMATT',lat:46.02,lng:7.75,
+       desc:'<span class="highlight">采尔马特</span>是马特洪峰脚下的童话小镇。没有汽车，只有马车、雪橇和登山靴的脚步声。冬天滑雪、夏天徒步，木屋餐厅里有热腾腾的奶酪火锅。你那需要被自然治愈的稳重灵魂，会在这里找到节奏。'},
+      {c:'加拿大',cn:'班夫',city:'BANFF',lat:51.18,lng:-115.57,
+       desc:'<span class="highlight">班夫</span>是落基山脉的明珠。露易丝湖如绿松石般纯净倒映雪山，森林里随时可能遇见麋鹿与黑熊。这里的"慢"是大自然的节奏——日出徒步、午后温泉、夜晚仰望银河。你需要这种"被山水包围"的稳定感。'},
+      {c:'瑞士',cn:'卢塞恩',city:'LUZERN',lat:47.05,lng:8.31,
+       desc:'<span class="highlight">卢塞恩</span>是瑞士最优雅的湖滨小城。卡贝尔木桥已横跨600余年，皮拉图斯山顶的云海每天都不重样。坐齿轮火车上山，乘游船游湖，回到老城吃一顿巧克力火锅——这就是品质生活的模样。'}
+    ],
+    culture: [
+      {c:'日本',cn:'京都',city:'KYOTO',lat:35.01,lng:135.77,
+       desc:'<span class="highlight">京都</span>是日本的灵魂之城。清水寺的木结构走过千年，伏见稻荷的鸟居蜿蜒成红色长河，祇园小巷里偶遇匆匆而过的艺伎。樱花、抹茶、枯山水、町家民宿——这里的"美"是慢慢渗入骨髓的。你懂得欣赏这种克制而深沉的优雅。'},
+      {c:'法国',cn:'巴黎',city:'PARIS',lat:48.85,lng:2.35,
+       desc:'<span class="highlight">巴黎</span>不需要解释。卢浮宫珍藏着人类的审美巅峰，塞纳河畔旧书摊散发着墨香，玛黑区的咖啡馆里坐着写诗的人。在这里散步本身就是艺术，连买面包都是仪式。属于你那懂得品味细节的灵魂。'},
+      {c:'日本',cn:'奈良',city:'NARA',lat:34.68,lng:135.83,
+       desc:'<span class="highlight">奈良</span>是比京都更安静的古都。东大寺的木构殿宇巨大而沉默，公园里的鹿温顺地走在游客身边，春日大社的石灯笼连绵不绝。这里没有喧嚣，只有时间的沉淀。你需要这样一座能让心慢下来的城市。'}
+    ],
+    modern: [
+      {c:'日本',cn:'东京',city:'TOKYO',lat:35.68,lng:139.65,
+       desc:'<span class="highlight">东京</span>是未来与传统并存的奇迹之城。涉谷十字路口的人潮、银座的精致店铺、深夜居酒屋的烧鸟与清酒、浅草寺的古老钟声——一切都精确得令人惊叹。你那严谨又对品质有要求的内核，会爱上这种"井井有条的繁华"。'},
+      {c:'加拿大',cn:'多伦多',city:'TORONTO',lat:43.65,lng:-79.38,
+       desc:'<span class="highlight">多伦多</span>是北美最多元的现代都市。CN 塔俯瞰着金融中心，唐人街、小意大利、希腊城各有风味，安大略湖边有最适合散步的步道。生活舒适、机会丰富、节奏不疾不徐——很适合你这种稳健向前的人。'}
+    ],
+    comfort: [
+      {c:'法国',cn:'普罗旺斯',city:'PROVENCE',lat:43.95,lng:4.81,
+       desc:'<span class="highlight">普罗旺斯</span>是薰衣草与橄榄树的国度。夏天的紫色花田延伸到天际，老石头小镇里有最质朴的市集，山羊奶酪和当地葡萄酒是日常奢侈。这里的生活慢得像电影，是你那懂得享受的土象灵魂的归宿。'},
+      {c:'日本',cn:'北海道',city:'HOKKAIDO',lat:43.22,lng:142.86,
+       desc:'<span class="highlight">北海道</span>是四季鲜明的味觉与风景天堂。冬天的雪与温泉、夏天的花田与海鲜、秋天的红叶、春天的樱花。札幌的拉面、小樽的寿司、富良野的薰衣草冰淇淋——你那对"美好生活"的渴望，会在这里被温柔满足。'},
+      {c:'瑞士',cn:'日内瓦',city:'GENEVA',lat:46.20,lng:6.14,
+       desc:'<span class="highlight">日内瓦</span>是品质感的代名词。日内瓦湖畔的大喷泉、老城区的钟表店、阿尔卑斯山触手可及，国际化氛围里又保留瑞士的精致与秩序。你那追求"稳妥的好生活"的内心，会在这里如鱼得水。'}
+    ]
+  },
+  '风': {
+    nature: [
+      {c:'荷兰',cn:'阿姆斯特丹',city:'AMSTERDAM',lat:52.37,lng:4.90,
+       desc:'<span class="highlight">阿姆斯特丹</span>是运河编织的自由之城。骑自行车穿过 17 世纪的窄窄运河屋，沿途是花市、博物馆和咖啡馆。这里的人开放、包容、乐于交谈——正合你这种喜欢思想流动的风象灵魂。'},
+      {c:'美国',cn:'旧金山',city:'SAN FRANCISCO',lat:37.77,lng:-122.42,
+       desc:'<span class="highlight">旧金山</span>是雾霭里的科技乌托邦。金门大桥跨越海湾，叮当作响的电缆车爬上斜坡，硅谷的创新精神渗透到每个咖啡馆。这里有山、有海、有最聪明的人——你的好奇心永远不会闲着。'}
+    ],
+    culture: [
+      {c:'德国',cn:'柏林',city:'BERLIN',lat:52.52,lng:13.40,
+       desc:'<span class="highlight">柏林</span>是欧洲最酷的思想熔炉。柏林墙残骸提醒着历史，而画廊、地下俱乐部、独立书店则书写着未来。这里没人在乎你穿什么、信什么，只在乎你想什么。属于你那不愿被定义的灵魂。'},
+      {c:'英国',cn:'爱丁堡',city:'EDINBURGH',lat:55.95,lng:-3.19,
+       desc:'<span class="highlight">爱丁堡</span>是石头建造的智识之城。古堡矗立在火山岩上，旧城蜿蜒着维多利亚的故事，每年八月艺术节让全城变成剧场。这里诞生过亚当·斯密和 J.K.罗琳——是思想者的故乡，也是你的故乡。'},
+      {c:'法国',cn:'巴黎',city:'PARIS',lat:48.85,lng:2.35,
+       desc:'<span class="highlight">巴黎</span>是思想者的天堂。左岸的咖啡馆里萨特和波伏娃曾辩论过存在，莎士比亚书店的旧书架上还留着海明威的影子。这里的浪漫不只是花朵，更是头脑的火花。你的灵魂在这里会很自由。'}
+    ],
+    modern: [
+      {c:'美国',cn:'纽约',city:'NEW YORK',lat:40.71,lng:-74.00,
+       desc:'<span class="highlight">纽约</span>是世界的中心，是永不睡眠的能量场。百老汇的灯光、华尔街的喧嚣、布鲁克林的潮流、中央公园的呼吸——这座城市同时容纳着野心、艺术、自由与混乱。你那永远向前的风象灵魂，需要这种密度。'},
+      {c:'英国',cn:'伦敦',city:'LONDON',lat:51.51,lng:-0.13,
+       desc:'<span class="highlight">伦敦</span>是历史与未来的奇妙合奏。大本钟旁有玻璃摩天楼，传统下午茶旁有米其林新派。大英博物馆收藏着世界，肖迪奇区的街头艺术每周更新。这种"古今并存"的多元，正合你善变又博学的口味。'},
+      {c:'美国',cn:'旧金山',city:'SAN FRANCISCO',lat:37.77,lng:-122.42,
+       desc:'<span class="highlight">旧金山</span>是改变世界的人聚集的地方。金门大桥见证着自由精神，海特街仍飘着嬉皮士的余韵，硅谷孕育着下一个未来。在这里，你的奇思妙想从不会被嘲笑——只会被认真讨论。'}
+    ],
+    comfort: [
+      {c:'荷兰',cn:'阿姆斯特丹',city:'AMSTERDAM',lat:52.37,lng:4.90,
+       desc:'<span class="highlight">阿姆斯特丹</span>是会让人慢下来的现代城市。在运河边骑车、在棕色咖啡馆喝一下午、在博物馆消磨整日——荷兰人发明了 "gezellig"（舒适惬意）这个词。属于你这种"既要思考又要松弛"的人。'},
+      {c:'英国',cn:'巴斯',city:'BATH',lat:51.38,lng:-2.36,
+       desc:'<span class="highlight">巴斯</span>是简·奥斯汀笔下的优雅小城。罗马浴场的温泉已流淌两千年，乔治王朝时代的米色石头建筑围成新月广场。在这里读一本书、泡一次温泉、喝一杯下午茶，是头脑与身体都被款待的感觉。'}
+    ]
+  },
+  '水': {
+    nature: [
+      {c:'新西兰',cn:'皇后镇',city:'QUEENSTOWN',lat:-45.03,lng:168.66,
+       desc:'<span class="highlight">皇后镇</span>是被群山与湖水抱在怀里的小镇。瓦卡蒂普湖深邃如墨，雪山倒映其上，蹦极、滑翔、徒步、品酒——这里既能让你激情澎湃，也能让你静坐发呆。属于你那敏感而向往自由的水象灵魂。'},
+      {c:'挪威',cn:'卑尔根',city:'BERGEN',lat:60.39,lng:5.32,
+       desc:'<span class="highlight">卑尔根</span>是峡湾之门，是被七座山环抱的彩色木屋之城。布吕根码头的木屋已立了几百年，渔市的海鲜清晨刚从北海捞起，乘船驶入松恩峡湾，瀑布从悬崖直泻入海。这种"壮美与忧郁并存"的氛围，是你内心的回声。'},
+      {c:'新西兰',cn:'罗托鲁瓦',city:'ROTORUA',lat:-38.14,lng:176.25,
+       desc:'<span class="highlight">罗托鲁瓦</span>是地热与毛利文化交织的灵性之地。地面冒着白烟，温泉湖泛着翡翠色，毛利长老的歌声在木屋中回荡。这里的"原始"和"神秘"会唤醒你直觉敏锐的灵魂深处。'}
+    ],
+    culture: [
+      {c:'希腊',cn:'雅典',city:'ATHENS',lat:37.98,lng:23.73,
+       desc:'<span class="highlight">雅典</span>是西方文明的起源。卫城在山顶眺望了 2500 年，普拉卡老城的猫慵懒地穿过古迹，地中海的阳光照亮每一根大理石柱。在这里，哲学不是学科，而是生活方式。属于你这种深思熟虑的灵魂。'},
+      {c:'葡萄牙',cn:'波尔图',city:'PORTO',lat:41.15,lng:-8.61,
+       desc:'<span class="highlight">波尔图</span>是杜罗河畔的旧时光之城。蓝色瓷砖教堂、瑞贝拉老区的彩色房屋、酒窖里陈年的波特酒、Fado 歌曲里的忧伤——这里的一切都带着浪漫的怀旧滤镜，正合你那细腻多愁的心。'}
+    ],
+    modern: [
+      {c:'希腊',cn:'雅典',city:'ATHENS',lat:37.98,lng:23.73,
+       desc:'<span class="highlight">雅典</span>正在悄悄变酷。古老的卫城下方，是充满涂鸦的 Psyrri 区、新派 tapas、屋顶酒吧。这里没有伦敦巴黎的紧迫感，却有地中海的阳光和无尽的星空。属于你这种既怀旧又现代的灵魂。'},
+      {c:'葡萄牙',cn:'里斯本',city:'LISBOA',lat:38.72,lng:-9.14,
+       desc:'<span class="highlight">里斯本</span>是欧洲最被低估的首都。28 路黄色电车爬过七座山丘，阿尔法玛老区飘着 Fado 歌声，Time Out 美食广场是味蕾的狂欢。生活成本不高、阳光充足、海风温柔——是数字游民的新宠，也是你的归宿。'}
+    ],
+    comfort: [
+      {c:'希腊',cn:'圣托里尼',city:'SANTORINI',lat:36.40,lng:25.46,
+       desc:'<span class="highlight">圣托里尼</span>是爱琴海上的白色梦境。蓝顶教堂悬在悬崖之上，伊亚的日落被誉为世界最美。在白墙小屋的阳台上吃希腊沙拉、喝当地葡萄酒、看夕阳沉入海平面——你那渴望浪漫的水象灵魂，在这里会找到栖息。'},
+      {c:'葡萄牙',cn:'里斯本',city:'LISBOA',lat:38.72,lng:-9.14,
+       desc:'<span class="highlight">里斯本</span>是慵懒与温柔的化身。坐在 Miradouro 观景台喝樱桃酒看日落，在 Pastéis de Belém 排队买热乎的葡式蛋挞，在阿尔法玛迷路本身就是收获。这里的节奏正合你那需要被温柔以待的心。'},
+      {c:'新西兰',cn:'惠灵顿',city:'WELLINGTON',lat:-41.29,lng:174.78,
+       desc:'<span class="highlight">惠灵顿</span>是世界上最酷的小首都。海湾环抱、咖啡馆密度全球第一、电影《指环王》在这里诞生，Te Papa 博物馆是国家骄傲。这里的人友善、安静、爱艺术——正合你这种内在丰盈的灵魂。'}
+    ]
+  }
+};
+
+function classifyWords(words) {
+  const scores = {nature:0, culture:0, modern:0, comfort:0};
+  const text = words.join('');
+  for (const ch of text) for (const cat in categories)
+    if (categories[cat].includes(ch)) scores[cat]++;
+  let best='nature', max=-1;
+  for (const cat in scores) if (scores[cat]>max){max=scores[cat];best=cat;}
+  return max===0 ? null : best;
+}
+
+const MAP_W = 1000, MAP_H = 500;
+const projection = d3.geoEquirectangular()
+  .scale(MAP_W / (2 * Math.PI))
+  .translate([MAP_W / 2, MAP_H / 2]);
+const pathGen = d3.geoPath(projection);
+
+let mapLoaded = false;
+let pendingPick = null;
+
+const MAP_URLS = [
+  'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json',
+  'https://fastly.jsdelivr.net/npm/world-atlas@2/countries-110m.json',
+  'https://gcore.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+];
+
+async function loadMap() {
+  for (const url of MAP_URLS) {
+    try {
+      const world = await d3.json(url);
+      if (world) { renderMap(world); return; }
+    } catch(e) { console.warn('Failed:', url); }
+  }
+  document.getElementById('mapLoading').textContent = '地图加载失败，请检查网络';
+}
+
+function renderMap(world) {
+  const countries = topojson.feature(world, world.objects.countries).features;
+  const svg = d3.select('#mapSvg');
+  svg.selectAll('path')
+    .data(countries)
+    .enter()
+    .append('path')
+    .attr('class', 'country')
+    .attr('d', pathGen)
+    .attr('data-name', d => d.properties.name);
+  document.getElementById('mapLoading').style.display = 'none';
+  mapLoaded = true;
+  if (pendingPick) { placePin(pendingPick); pendingPick = null; }
+}
+
+function placePin(pick) {
+  d3.selectAll('#mapSvg .country').classed('highlight', false);
+  const nameMap = {
+    '澳大利亚':'Australia','巴西':'Brazil','意大利':'Italy','西班牙':'Spain',
+    '瑞士':'Switzerland','加拿大':'Canada','日本':'Japan','法国':'France',
+    '荷兰':'Netherlands','美国':'United States of America','德国':'Germany',
+    '英国':'United Kingdom','新西兰':'New Zealand','挪威':'Norway',
+    '希腊':'Greece','葡萄牙':'Portugal'
+  };
+  const enName = nameMap[pick.c];
+  if (enName) d3.select(`#mapSvg .country[data-name="${enName}"]`).classed('highlight', true);
+  const [px, py] = projection([pick.lng, pick.lat]);
+  const pin = document.getElementById('pin');
+  pin.style.left = (px / MAP_W * 100) + '%';
+  pin.style.top = (py / MAP_H * 100) + '%';
+}
+
+loadMap();
+
+function play() {
+  const name = document.getElementById('name').value.trim();
+  const bd = document.getElementById('birthday').value.trim();
+  const w1 = document.getElementById('w1').value.trim();
+  const w2 = document.getElementById('w2').value.trim();
+  const w3 = document.getElementById('w3').value.trim();
+  if (!name||!bd||!w1||!w2||!w3) { alert('请填写所有信息哦~'); return; }
+  const parts = bd.split('/');
+  if (parts.length!==2) { alert('生日格式应为 MM/DD'); return; }
+  const m=parseInt(parts[0]), d=parseInt(parts[1]);
+  if (!m||!d) { alert('生日格式有误'); return; }
+  
+  const zodiac = getZodiac(m,d);
+  const elem = elementMap[zodiac];
+  let cat = classifyWords([w1,w2,w3]);
+  if (!cat) {
+    const cats=['nature','culture','modern','comfort'];
+    cat = cats[Math.floor(Math.random()*cats.length)];
+  }
+  const list = db[elem][cat];
+  const pick = list[Math.floor(Math.random()*list.length)];
+  const catName = {nature:'自然户外',culture:'文化艺术',modern:'现代活力',comfort:'舒适闲逸'}[cat];
+  
+  document.getElementById('greeting').textContent = `${name.toUpperCase()}，你的灵魂归宿是`;
+  document.getElementById('cityLabel').textContent = pick.city;
+  document.getElementById('countryName').textContent = `${pick.c} · ${pick.cn}`;
+  document.getElementById('description').innerHTML = pick.desc;
+  document.getElementById('zodiacText').textContent = `${zodiac}座（${elem}象）`;
+  document.getElementById('catText').textContent = catName;
+  
+  if (mapLoaded) placePin(pick);
+  else pendingPick = pick;
+  
+  document.getElementById('page-input').style.display = 'none';
+  document.getElementById('page-result').style.display = 'block';
+  window.scrollTo(0,0);
+  
+  document.querySelectorAll('#page-result .greeting, #page-result .map-wrap, #page-result .city-label, #page-result .pin-line, #page-result .pin-dot, #page-result .info-block').forEach(el=>{
+    el.style.animation='none'; el.offsetHeight; el.style.animation='';
+  });
+}
+
+function goBack() {
+  document.getElementById('page-result').style.display='none';
+  document.getElementById('page-input').style.display='flex';
+  window.scrollTo(0,0);
+}
+document.addEventListener('keypress', e => {
+  if (e.key==='Enter' && document.getElementById('page-input').style.display!=='none') play();
+});
+</script>
+
+</body></html>
